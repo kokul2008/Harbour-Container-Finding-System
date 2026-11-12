@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harbour Container Finding System</title>
+<style>
+:root{--navy:#12304a;--blue:#176b87;--light:#eef4f7;--white:#fff;--green:#16835d;--red:#c44747;--amber:#a96a08}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--light);color:#1d2b36}
+header{background:var(--navy);color:white;padding:20px 5%;display:flex;justify-content:space-between;align-items:center;gap:12px}
+header h1{font-size:22px;margin:0}header p{margin:5px 0 0;color:#d5e5ee;font-size:13px}
+button{border:0;border-radius:7px;padding:10px 14px;cursor:pointer;font-weight:600}
+.btn{background:var(--blue);color:white}.btn:hover{filter:brightness(.92)}.btn-secondary{background:#e4edf2;color:#17364b}
+.btn-danger{background:var(--red);color:white}.btn-green{background:var(--green);color:white}
+main{max-width:1150px;margin:25px auto;padding:0 16px}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:18px;box-shadow:0 3px 14px #18364a12}
+.login{max-width:420px;margin:55px auto}.login h2{margin-top:0}
+label{display:block;font-size:13px;font-weight:700;margin:12px 0 6px}
+input,select{width:100%;padding:11px;border:1px solid #cbd8df;border-radius:7px;font-size:14px;background:white}
+.row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}
+.stat{background:white;padding:17px;border-radius:10px;border-left:4px solid var(--blue)}
+.stat strong{font-size:25px;display:block}.stat span{font-size:13px;color:#62717b}
+.searchbar{display:grid;grid-template-columns:1fr auto;gap:10px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:11px 9px;border-bottom:1px solid #e7edf0}th{background:#f5f8fa}
+.badge{padding:4px 8px;border-radius:20px;font-size:12px;font-weight:700;background:#e4edf2}
+.badge.waste{background:#fde8e8;color:#a52d2d}.badge.available{background:#e1f4eb;color:#126b49}
+.badge.blocked{background:#fff1d8;color:#885600}
+.result{background:#f5f9fb;border-radius:9px;padding:15px;margin-top:14px;line-height:1.55}
+.hidden{display:none}.muted{color:#63737d;font-size:13px}.actions{display:flex;gap:8px;flex-wrap:wrap}
+.notice{padding:11px;background:#fff7e6;border-left:4px solid #d79a2d;border-radius:6px;font-size:13px;line-height:1.5}
+.error{color:#b42318;font-size:13px;margin-top:10px}
+@media(max-width:700px){.row,.stats{grid-template-columns:1fr}.searchbar{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}table{font-size:12px}th,td{padding:8px 5px}}
+</style>
+</head>
+<body>
+<header>
+ <div><h1>Harbour Container Finding System</h1><p>Worker login • Container search • Yard location • Retrieval planning</p></div>
+ <button id="logoutBtn" class="btn-secondary hidden" onclick="logout()">Log out</button>
+</header>
+
+<main>
+<section id="loginPanel" class="card login">
+ <h2>Worker Login</h2>
+ <p class="muted">Sign in to search container details and view a suggested retrieval sequence.</p>
+ <label for="username">Username</label><input id="username" placeholder="Enter username" autocomplete="username">
+ <label for="password">Password</label><input id="password" type="password" placeholder="Enter password" autocomplete="current-password">
+ <p class="muted">Demo login: <b>worker</b> / <b>worker123</b></p>
+ <button class="btn" style="width:100%;margin-top:10px" onclick="login()">Login</button>
+ <div id="loginError" class="error"></div>
+</section>
+
+<section id="appPanel" class="hidden">
+ <div class="stats">
+  <div class="stat"><strong id="totalCount">0</strong><span>Total containers</span></div>
+  <div class="stat"><strong id="wasteCount">0</strong><span>Marked as waste</span></div>
+  <div class="stat"><strong id="availableCount">0</strong><span>Available / stored</span></div>
+ </div>
+
+ <section class="card">
+  <h2>Find a Container</h2>
+  <p class="muted">Search by container ID, cargo name, or contents.</p>
+  <div class="searchbar"><input id="searchInput" placeholder="Example: CONT-1004 or rice" oninput="renderTable()"><button class="btn" onclick="renderTable()">Search</button></div>
+  <div style="overflow-x:auto;margin-top:15px">
+   <table><thead><tr><th>Container ID</th><th>Contents</th><th>Yard position</th><th>Status</th><th>Action</th></tr></thead><tbody id="containerRows"></tbody></table>
+  </div>
+  <div id="searchResult"></div>
+ </section>
+
+ <section class="card">
+  <h2>Add Container Record</h2>
+  <div class="row">
+   <div><label>Container ID</label><input id="newId" placeholder="CONT-1010"></div>
+   <div><label>Contents / Cargo</label><input id="newCargo" placeholder="Example: Machinery"></div>
+   <div><label>Status</label><select id="newStatus"><option value="Stored">Stored</option><option value="Waste">Waste</option></select></div>
+  </div>
+  <div class="row">
+   <div><label>Bay</label><input id="newBay" type="number" min="1" placeholder="1"></div>
+   <div><label>Row</label><input id="newRow" type="number" min="1" placeholder="1"></div>
+   <div><label>Tier (1 = bottom)</label><input id="newTier" type="number" min="1" placeholder="1"></div>
+  </div>
+  <button class="btn" style="margin-top:14px" onclick="addContainer()">Add Container</button>
+  <p class="muted">This demo saves records in this browser using local storage.</p>
+ </section>
+
+ <section class="card">
+  <h2>Waste Container / Retrieval Guidance</h2>
+  <p class="muted">Select a container to view the containers that are above it in the same bay and row.</p>
+  <div class="row">
+   <div><label>Target container ID</label><input id="targetId" placeholder="CONT-1004"></div>
+   <div style="display:flex;align-items:end"><button class="btn" style="width:100%" onclick="makePlan()">Prepare retrieval plan</button></div>
+   <div></div>
+  </div>
+  <div id="planResult" class="result hidden"></div>
+  <div class="notice" style="margin-top:14px"><b>Safety note:</b> This is a student/demo planning tool. It does not control cranes or yard equipment. Real container moves must be checked and approved by authorised terminal staff using the port's actual stacking rules, weight data, hazardous-cargo information and equipment procedures.</div>
+ </section>
+</section>
+</main>
+<script>
+const starterData = [
+ {id:"CONT-1001",cargo:"Rice bags",bay:1,row:1,tier:1,status:"Stored"},
+ {id:"CONT-1002",cargo:"Plastic waste",bay:1,row:1,tier:2,status:"Waste"},
+ {id:"CONT-1003",cargo:"Textiles",bay:1,row:1,tier:3,status:"Stored"},
+ {id:"CONT-1004",cargo:"Electrical motors",bay:1,row:1,tier:4,status:"Stored"},
+ {id:"CONT-1005",cargo:"Furniture",bay:1,row:2,tier:1,status:"Stored"},
+ {id:"CONT-1006",cargo:"Scrap metal",bay:2,row:1,tier:1,status:"Waste"},
+ {id:"CONT-1007",cargo:"Medical supplies",bay:2,row:1,tier:2,status:"Stored"},
+ {id:"CONT-1008",cargo:"Automobile parts",bay:2,row:1,tier:3,status:"Stored"},
+ {id:"CONT-1009",cargo:"Food products",bay:2,row:2,tier:1,status:"Stored"}
+];
+let containers = JSON.parse(localStorage.getItem("harbourContainers") || "null") || starterData;
+function save(){localStorage.setItem("harbourContainers",JSON.stringify(containers));}
+function login(){
+ const u=document.getElementById("username").value.trim(),p=document.getElementById("password").value;
+ if(u==="worker" && p==="worker123"){
+  document.getElementById("loginPanel").classList.add("hidden");
+  document.getElementById("appPanel").classList.remove("hidden");
+  document.getElementById("logoutBtn").classList.remove("hidden");
+  document.getElementById("loginError").textContent="";
+  renderTable();
+ }else document.getElementById("loginError").textContent="Incorrect username or password. Try the demo login shown above.";
+}
+function logout(){
+ document.getElementById("loginPanel").classList.remove("hidden");
+ document.getElementById("appPanel").classList.add("hidden");
+ document.getElementById("logoutBtn").classList.add("hidden");
+ document.getElementById("password").value="";
+}
+function renderTable(){
+ const q=document.getElementById("searchInput").value.toLowerCase();
+ const list=containers.filter(c=>[c.id,c.cargo,c.status].join(" ").toLowerCase().includes(q));
+ document.getElementById("containerRows").innerHTML=list.map(c=>`
+ <tr><td><b>${esc(c.id)}</b></td><td>${esc(c.cargo)}</td><td>Bay ${c.bay}, Row ${c.row}, Tier ${c.tier}</td>
+ <td><span class="badge ${c.status==="Waste"?"waste":"available"}">${c.status}</span></td>
+ <td><button class="btn-secondary" onclick="showDetails('${esc(c.id)}')">View</button></td></tr>`).join("") || '<tr><td colspan="5">No matching containers found.</td></tr>';
+ document.getElementById("totalCount").textContent=containers.length;
+ document.getElementById("wasteCount").textContent=containers.filter(c=>c.status==="Waste").length;
+ document.getElementById("availableCount").textContent=containers.filter(c=>c.status!=="Waste").length;
+}
+function esc(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));}
+function showDetails(id){
+ const c=containers.find(x=>x.id===id);if(!c)return;
+ document.getElementById("searchResult").innerHTML=`<div class="result"><b>Container details</b><br>ID: ${esc(c.id)}<br>Contents: ${esc(c.cargo)}<br>Position: Bay ${c.bay}, Row ${c.row}, Tier ${c.tier}<br>Status: ${c.status}</div>`;
+ document.getElementById("targetId").value=c.id;
+}
+function addContainer(){
+ const id=document.getElementById("newId").value.trim(),cargo=document.getElementById("newCargo").value.trim();
+ const bay=Number(document.getElementById("newBay").value),row=Number(document.getElementById("newRow").value),tier=Number(document.getElementById("newTier").value);
+ const status=document.getElementById("newStatus").value;
+ if(!id||!cargo||![bay,row,tier].every(n=>Number.isInteger(n)&&n>0)){alert("Enter a unique ID, cargo name, and positive whole numbers for bay, row and tier.");return;}
+ if(containers.some(c=>c.id.toLowerCase()===id.toLowerCase())){alert("That container ID already exists.");return;}
+ if(containers.some(c=>c.bay===bay&&c.row===row&&c.tier===tier)){alert("That yard position is already occupied in this demo.");return;}
+ containers.push({id,cargo,bay,row,tier,status});save();renderTable();
+ ["newId","newCargo","newBay","newRow","newTier"].forEach(x=>document.getElementById(x).value="");
+ alert("Container record added.");
+}
+function makePlan(){
+ const id=document.getElementById("targetId").value.trim().toLowerCase();
+ const target=containers.find(c=>c.id.toLowerCase()===id),box=document.getElementById("planResult");
+ box.classList.remove("hidden");
+ if(!target){box.innerHTML="<b>Container not found.</b> Check the ID and try again.";return;}
+ const blockers=containers.filter(c=>c.bay===target.bay&&c.row===target.row&&c.tier>target.tier).sort((a,b)=>b.tier-a.tier);
+ let out=`<b>Target:</b> ${esc(target.id)} — ${esc(target.cargo)}<br><b>Position:</b> Bay ${target.bay}, Row ${target.row}, Tier ${target.tier}<br>`;
+ if(blockers.length){
+  out+=`<br><b>Suggested planning sequence:</b><ol>`;
+  blockers.forEach(c=>out+=`<li>Temporarily relocate <b>${esc(c.id)}</b> (${esc(c.cargo)}) from Tier ${c.tier} to an approved temporary slot.</li>`);
+  out+=`</ol><b>Then:</b> once the access path is clear, an authorised operator can retrieve ${esc(target.id)} following the terminal's approved procedure.`;
+ }else out+="<br><b>Access check:</b> No containers are recorded above this target in the same bay and row. Verify the live yard position before retrieval.";
+ if(target.status==="Waste"){
+  out+=`<br><br><b>Waste handling:</b> Confirm the cargo classification and condition. If it is approved for disposal, arrange movement to the designated waste/inspection area using the terminal's authorised process. Do not treat unknown, leaking or hazardous cargo as ordinary waste.`;
+ }else{
+  out+=`<br><br><b>Waste containers in this stack:</b> ${blockers.filter(c=>c.status==="Waste").length}. If any blocker is marked Waste, it still needs an approved temporary relocation; waste status does not mean it can be removed without checks.`;
+ }
+ box.innerHTML=out;
+}
+</script>
+</body>
+</html>
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<title>Harbour Dashboard</title>
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #eef4f8;
+}
+header {
+    background: #12304a;
+    color: white;
+    padding: 20px;
+    text-align: center;
+}
+nav {
+    background: #176b87;
+    padding: 15px;
+    text-align: center;
+}
+nav a {
+    color: white;
+    text-decoration: none;
+    margin: 20px;
+    font-weight: bold;
+}
+.container {
+    padding: 30px;
+}
+.cards {
+    display: grid;
+    grid-template-columns: repeat(3,1fr);
+    gap: 20px;
+}
+.card {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 3px 10px #aaa;
+    transition: 0.3s;
+}
+.card:hover {
+    transform: translateY(-8px);
+}
+.card h2 {
+    color: #176b87;
+}
+.card p {
+    font-size: 25px;
+    font-weight: bold;
+}
+.welcome {
+    background: #d8edf5;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 25px;
+}
+@media(max-width:650px) {
+    .cards {grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>HARBOUR CONTAINER MANAGEMENT</h1>
+<p>Smart Container Tracking and Retrieval System</p>
+</header>
+
+<nav>
+<a href="dashboard.html">Dashboard</a>
+<a href="index.html">Container Search</a>
+<a href="helpline.html">Helpline</a>
+</nav>
+
+<div class="container">
+
+<div class="welcome">
+<h2>Welcome, Harbour Worker!</h2>
+<p>Monitor container details, cargo information and yard operations from one place.</p>
+</div>
+
+<div class="cards">
+
+<div class="card">
+<h2>📦 Total Containers</h2>
+<p id="total">120</p>
+</div>
+
+<div class="card">
+<h2>🚢 Available Containers</h2>
+<p id="available">85</p>
+</div>
+
+<div class="card">
+<h2>♻ Waste Containers</h2>
+<p id="waste">15</p>
+</div>
+
+<div class="card">
+<h2>🏗 Retrieved Containers</h2>
+<p>20</p>
+</div>
+
+<div class="card">
+<h2>📍 Yard Locations</h2>
+<p>12</p>
+</div>
+
+<div class="card">
+<h2>👷 Active Workers</h2>
+<p>25</p>
+</div>
+
+</div>
+</div>
+
+</body>
+</html>
+```
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<title>Harbour Helpline</title>
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #eef4f8;
+}
+header {
+    background: #12304a;
+    color: white;
+    text-align: center;
+    padding: 20px;
+}
+nav {
+    background: #176b87;
+    padding: 15px;
+    text-align: center;
+}
+nav a {
+    color: white;
+    text-decoration: none;
+    margin: 20px;
+    font-weight: bold;
+}
+.container {
+    max-width: 650px;
+    margin: 35px auto;
+    padding: 25px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px #aaa;
+}
+h2 {
+    color: #176b87;
+}
+label {
+    display: block;
+    margin-top: 15px;
+    font-weight: bold;
+}
+input, textarea, select {
+    width: 100%;
+    padding: 12px;
+    margin-top: 7px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+button {
+    margin-top: 20px;
+    padding: 12px 25px;
+    background: #176b87;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+button:hover {
+    background: #12304a;
+}
+.contact {
+    background: #e5f3f8;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 20px;
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>HARBOUR HELPLINE</h1>
+<p>Worker Support and Assistance</p>
+</header>
+
+<nav>
+<a href="dashboard.html">Dashboard</a>
+<a href="index.html">Container Search</a>
+<a href="helpline.html">Helpline</a>
+</nav>
+
+<div class="container">
+
+<h2>📞 How Can We Help You?</h2>
+<p>Contact the harbour support team for container-related issues.</p>
+
+<div class="contact">
+<h3>Emergency Contact</h3>
+<p>📞 Harbour Control Room: Contact your terminal control room.</p>
+<p>📧 Email: support@harbourdemo.com</p>
+<p>🕒 Support: 24/7 (demo information)</p>
+</div>
+
+<form onsubmit="sendMessage(event)">
+
+<label>Worker Name</label>
+<input type="text" id="name" required>
+
+<label>Worker ID</label>
+<input type="text" id="workerid" required>
+
+<label>Issue Type</label>
+<select id="issue">
+<option>Container Not Found</option>
+<option>Incorrect Container Location</option>
+<option>Waste Container Issue</option>
+<option>Container Retrieval Problem</option>
+<option>Login Problem</option>
+<option>Other</option>
+</select>
+
+<label>Description</label>
+<textarea id="message" rows="5" required></textarea>
+
+<button type="submit">Submit Request</button>
+
+</form>
+
+</div>
+
+<script>
+function sendMessage(event) {
+    event.preventDefault();
+
+    alert("Your support request has been submitted successfully!");
+
+    document.querySelector("form").reset();
+}
+</script>
+
+</body>
+</html>
+```
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<title>Harbour Management Dashboard</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #edf3f7;
+    color: #183247;
+}
+
+header {
+    background: #102f49;
+    color: white;
+    padding: 22px;
+    text-align: center;
+}
+
+header h1 {
+    margin: 0;
+}
+
+nav {
+    background: #176b87;
+    padding: 16px;
+    text-align: center;
+}
+
+nav a {
+    color: white;
+    text-decoration: none;
+    margin: 18px;
+    font-weight: bold;
+}
+
+.container {
+    padding: 25px;
+}
+
+.welcome {
+    background: linear-gradient(120deg,#176b87,#12304a);
+    color: white;
+    padding: 25px;
+    border-radius: 12px;
+    margin-bottom: 25px;
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(4,1fr);
+    gap: 18px;
+}
+
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 3px 10px #0001;
+    transition: 0.3s;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.card h3 {
+    color: #176b87;
+}
+
+.number {
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.section {
+    background: white;
+    padding: 22px;
+    border-radius: 12px;
+    margin-top: 25px;
+    box-shadow: 0 3px 10px #0001;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+th, td {
+    padding: 13px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background: #176b87;
+    color: white;
+}
+
+.status {
+    padding: 6px 10px;
+    border-radius: 15px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.active {
+    background: #d6f5e3;
+    color: green;
+}
+
+.leave {
+    background: #ffe4e4;
+    color: red;
+}
+
+.progress {
+    background: #fff0cb;
+    color: #9b6800;
+}
+
+.info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+}
+
+.info-box {
+    background: #e8f3f7;
+    padding: 18px;
+    border-radius: 10px;
+}
+
+footer {
+    background: #102f49;
+    color: white;
+    text-align: center;
+    padding: 15px;
+    margin-top: 30px;
+}
+
+@media(max-width:800px) {
+    .stats {
+        grid-template-columns: repeat(2,1fr);
+    }
+    .info {
+        grid-template-columns: 1fr;
+    }
+    table {
+        font-size: 12px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>⚓ HARBOUR CONTAINER MANAGEMENT</h1>
+<p>Container Tracking and Worker Management Dashboard</p>
+</header>
+
+<nav>
+<a href="dashboard.html">Dashboard</a>
+<a href="index.html">Container Search</a>
+<a href="helpline.html">Helpline</a>
+</nav>
+
+<div class="container">
+
+<div class="welcome">
+<h2>Welcome to Harbour Operations Dashboard!</h2>
+<p>Monitor container movements, worker activities and yard management.</p>
+<p><b>Date:</b> <span id="date"></span></p>
+</div>
+
+<!-- Container Statistics -->
+
+<h2>📦 Container Statistics</h2>
+
+<div class="stats">
+
+<div class="card">
+<h3>Total Containers</h3>
+<div class="number">250</div>
+<p>Registered Containers</p>
+</div>
+
+<div class="card">
+<h3>Available Containers</h3>
+<div class="number">180</div>
+<p>Ready for Allocation</p>
+</div>
+
+<div class="card">
+<h3>Waste Containers</h3>
+<div class="number">25</div>
+<p>Pending Inspection</p>
+</div>
+
+<div class="card">
+<h3>Retrieved Containers</h3>
+<div class="number">45</div>
+<p>Successfully Moved</p>
+</div>
+
+</div>
+
+<!-- Worker Details -->
+
+<div class="section">
+<h2>👷 Worker Information</h2>
+
+<table>
+<tr>
+<th>Worker ID</th>
+<th>Worker Name</th>
+<th>Department</th>
+<th>Shift</th>
+<th>Status</th>
+</tr>
+
+<tr>
+<td>WK001</td>
+<td>Arun Kumar</td>
+<td>Container Handling</td>
+<td>Morning</td>
+<td><span class="status active">Active</span></td>
+</tr>
+
+<tr>
+<td>WK002</td>
+<td>Priya Devi</td>
+<td>Container Inspection</td>
+<td>Morning</td>
+<td><span class="status active">Active</span></td>
+</tr>
+
+<tr>
+<td>WK003</td>
+<td>Rahul Raj</td>
+<td>Crane Operations</td>
+<td>Evening</td>
+<td><span class="status progress">On Duty</span></td>
+</tr>
+
+<tr>
+<td>WK004</td>
+<td>Vijay Kumar</td>
+<td>Yard Management</td>
+<td>Night</td>
+<td><span class="status leave">On Leave</span></td>
+</tr>
+
+<tr>
+<td>WK005</td>
+<td>Meena Lakshmi</td>
+<td>Container Tracking</td>
+<td>Morning</td>
+<td><span class="status active">Active</span></td>
+</tr>
+
+<tr>
+<td>WK006</td>
+<td>Santhosh</td>
+<td>Waste Management</td>
+<td>Evening</td>
+<td><span class="status active">Active</span></td>
+</tr>
+
+</table>
+</div>
+
+<!-- Yard Information -->
+
+<div class="section">
+<h2>🏗️ Harbour Yard Information</h2>
+
+<div class="info">
+
+<div class="info-box">
+<h3>Yard A</h3>
+<p>Container Capacity: 100</p>
+<p>Occupied: 75</p>
+<p>Available Slots: 25</p>
+</div>
+
+<div class="info-box">
+<h3>Yard B</h3>
+<p>Container Capacity: 100</p>
+<p>Occupied: 80</p>
+<p>Available Slots: 20</p>
+</div>
+
+<div class="info-box">
+<h3>Yard C</h3>
+<p>Container Capacity: 100</p>
+<p>Occupied: 60</p>
+<p>Available Slots: 40</p>
+</div>
+
+<div class="info-box">
+<h3>Waste Storage Area</h3>
+<p>Total Waste Containers: 25</p>
+<p>Pending Inspection: 10</p>
+<p>Cleared: 15</p>
+</div>
+
+</div>
+</div>
+
+<!-- Recent Activities -->
+
+<div class="section">
+<h2>📋 Recent Harbour Activities</h2>
+
+<table>
+<tr>
+<th>Activity ID</th>
+<th>Container ID</th>
+<th>Activity</th>
+<th>Assigned Worker</th>
+<th>Status</th>
+</tr>
+
+<tr>
+<td>ACT001</td>
+<td>CONT-1001</td>
+<td>Container Retrieved</td>
+<td>Arun Kumar</td>
+<td>Completed</td>
+</tr>
+
+<tr>
+<td>ACT002</td>
+<td>CONT-1002</td>
+<td>Waste Inspection</td>
+<td>Santhosh</td>
+<td>Pending</td>
+</tr>
+
+<tr>
+<td>ACT003</td>
+<td>CONT-1003</td>
+<td>Container Relocation</td>
+<td>Rahul Raj</td>
+<td>In Progress</td>
+</tr>
+
+<tr>
+<td>ACT004</td>
+<td>CONT-1004</td>
+<td>Cargo Verification</td>
+<td>Priya Devi</td>
+<td>Completed</td>
+</tr>
+
+</table>
+</div>
+
+</div>
+
+<footer>
+<p>© 2026 Harbour Container Management System | All Rights Reserved</p>
+</footer>
+
+<script>
+document.getElementById("date").innerHTML =
+new Date().toLocaleDateString();
+</script>
+
+</body>
+</html>
+```
